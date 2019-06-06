@@ -195,10 +195,57 @@ class NF(object):
         df.to_csv('selected_features_mean_value.csv',index=False)
         data.to_csv('NF_LR_prediction.csv',index=False)
 
+def get_signal_categories(input_data,model_path,selected_features_path):
+    """
+    created by 李帅NLP
+    按照这个顺序给输入的数据列表(list)
+    ['actual_HS', 'forecast_HS', 'previous_HS', 'actual_NF', 'forecast_NF',
+     'previous_NF', 'actual_UR', 'forecast_UR', 'previous_UR']
+    :param input_data: 输入的数据
+    :param model_path: 预测模型的路径
+    :param selected_features_path: 特征选择后的特征表格（来自训练过程）
+    :return:signal(1,-1)  category(string)
+    """
+    if isinstance(input_data,list)==False:
+        raise TypeError('输入必须是按照一定固定顺序是列表数据（list)!')
+    else:
+        if len(input_data)!=9:
+            raise TypeError('输入的列表必须有9个值，请检查输入值的个数')
+        else:
+            import joblib, numpy as np
+            import pandas as pd
+            model = joblib.load(model_path)
+            sf = pd.read_csv(selected_features_path)
+            x = []
+            for i in range(len(input_data)):
+                if i % 3 == 0:
+                    x.append(input_data[i] - input_data[i + 1])  # A-F
+                    x.append(input_data[i] - input_data[i + 2])  # A-P
+                    x.append(input_data[i + 1] - input_data[i + 2])  # F-P
+            diff_features = ['AF_HS', 'AP_HS', 'FP_HS', 'AF_NF', 'AP_NF',
+                             'FP_NF', 'AF_UR', 'AP_UR', 'FP_UR']
+            x_df=pd.DataFrame(columns=diff_features)
+            x_df=x_df.append(pd.Series({diff_features[i]:x[i] for i in range(9)}),ignore_index=True)
+            print(x_df)
+            signal = model.predict(x_df)
+            category = str()
+            for i in range(len(diff_features)):
+                if diff_features[i] in list(sf.columns):
+                    if x[i] >= sf.loc[0, diff_features[i]]:
+                        category += '2'
+                    else:
+                        category += '1'
+            return list(signal)[0], category
+
 if __name__=='__main__':
-    a=NF()
-    a.prediction(model_path='../data/output/model/NF_large_LR_acc_0.8823529411764706.model',
-                 selected_features='../data/output/model/selected_features.txt')
+    print(get_signal_categories(
+        input_data=[0.2,0.3,0.2,-0.09999999999999998,0.0,0.09999999999999998,263,181.0,189.0],
+        model_path='../data/output/model/NF_large_LR_acc_0.8823529411764706.model',
+        selected_features_path='../data/output/predictions/selected_features_mean_value.csv'
+    ))
+    # a=NF()
+    # a.prediction(model_path='../data/output/model/NF_large_LR_acc_0.8823529411764706.model',
+    #              selected_features='../data/output/model/selected_features.txt')
 
 
 
