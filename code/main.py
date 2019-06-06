@@ -95,6 +95,13 @@ class NF(object):
         res.rename(columns={'datetime':'time'},inplace=True)
         original_features=[i for i in res.columns if i.split('_')[0][0] in ['f','p','a']]
         diff_features=[i for i in res.columns if i.split('_')[0][0] in ['F','A']]
+        signal_file=pd.read_csv('../data/input/x/signal_NF_30.csv')
+        t=signal_file[signal_file.signal==0].index
+        signal_file.drop(index=t,inplace=True)
+        res.drop(index=t,inplace=True)
+        res['signal']=signal_file['signal']
+        print(diff_features)
+        print(original_features)
         return res,original_features,diff_features
 
     def train(self,train_num,is_large=False):
@@ -114,10 +121,11 @@ class NF(object):
         from sklearn.svm import SVC, LinearSVC,NuSVC
         from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier, AdaBoostClassifier,BaggingClassifier
         from sklearn.tree import DecisionTreeClassifier
+        from sklearn.ensemble import ExtraTreesClassifier
         mapping={
-            'LR': LogisticRegression(),
+            'LR': LogisticRegression(penalty='l2'),
             'RC':RidgeClassifier(),
-            'SGD':SGDClassifier(),
+            'SGD':SGDClassifier(max_iter=2000, tol=1e-3),
             'KNN':KNeighborsClassifier(n_neighbors=3),
             'SVC':SVC(),
             'LinearSVC':LinearSVC(),
@@ -142,20 +150,55 @@ class NF(object):
             print('{} acc is {}'.format(model_name,acc))
         best_index=np.argmax(accs)
         import joblib
-        joblib.dump(models[best_index],'../data/output/model/NF_{}_acc_{}.model'.format(list(mapping.keys())[best_index],
+        joblib.dump(models[best_index],'../data/output/model/NF_{}_{}_acc_{}.model'.format('large' if is_large else '59',list(mapping.keys())[best_index],
                                                                                         accs[best_index]))
         prediction=pd.DataFrame()
         prediction['time']=data.loc[test_index,'time']
         prediction['signal']=preds[best_index]
-        prediction.to_csv('../data/output/predictions/NF_{}_prediction.csv'.format(list(mapping.keys())[best_index]),index=False)
-        try:
-            print(models[best_index].feature_importances_)
-        except Exception as e:
-            print(models[7].feature_importances_)
+        prediction.to_csv('../data/output/predictions/NF_{}_{}_prediction.csv'.format('large' if is_large else '59',list(mapping.keys())[best_index]),index=False)
+        fs=ExtraTreesClassifier()
+        fs.fit(x_train,y_train)
+        fi=list(fs.feature_importances_)
+        import heapq
+        t=map(fi.index,heapq.nlargest(4,fi))
+        z = list(t)
+        selected_features=[diff_feature[i] for i in z]
+        print(selected_features)
+        f=open('../data/output/model/selected_features.txt','w',encoding='utf-8')
+        f.writelines('\n'.join(selected_features))
+
+    def prediction(self,model_path,selected_features,is_large=True):
+        if is_large==False:
+            data, original_feature, diff_feature = self.get_train_data_small_dataset()
+        else:
+            data,original_feature,diff_feature=self.get_train_data_large_dataset()
+        sf=open(selected_features,'r',encoding='utf-8').readlines()
+        sf=[i.strip('\n') for i in sf]
+        import joblib
+        model=joblib.load(model_path)
+        x=data[diff_feature]
+        y=data['signal']
+        data['prediction']=model.predict(x)
+        mean_x=data[sf].mean()
+        res=[]
+        for i in data.index:
+            temp=str()
+            for j in sf:
+                if data.loc[i,j]>=mean_x[j]:
+                    temp+='2'
+                else:
+                    temp+='1'
+            res.append(temp)
+        data['categories']=res
+        df=pd.DataFrame()
+        df=df.append(mean_x,ignore_index=True)
+        df.to_csv('selected_features_mean_value.csv',index=False)
+        data.to_csv('NF_LR_prediction.csv',index=False)
 
 if __name__=='__main__':
     a=NF()
-    a.train(train_num=43)
+    a.prediction(model_path='../data/output/model/NF_large_LR_acc_0.8823529411764706.model',
+                 selected_features='../data/output/model/selected_features.txt')
 
 
 
